@@ -9,7 +9,7 @@ import {
 // Predefined tournament presets for quick testing
 const PRESETS = {
   pythonDemo: {
-    name: 'Python初期値 (サテライト)',
+    name: '初期値 (サテライト)',
     totalEntries: 279,
     remainingPlayers: 9,
     startStack: 5000,
@@ -53,8 +53,13 @@ const PRESETS = {
 };
 
 export default function App() {
-  // Sidebar state (出し入れ可能)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Sidebar state (出し入れ可能 / モバイル時は初期で閉じる)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > 900;
+    }
+    return true;
+  });
 
   // Input State
   const [params, setParams] = useState(PRESETS.pythonDemo);
@@ -281,6 +286,9 @@ export default function App() {
   const handleCalculateClick = () => {
     const prizes = resolvePrizes(prizeType, satellitePrizeCount, satellitePrizeAmount, params.prizes);
     runCalculation(params, prizes);
+    if (typeof window !== 'undefined' && window.innerWidth <= 900) {
+      setIsSidebarOpen(false);
+    }
   };
 
   // Prize manipulation
@@ -379,12 +387,16 @@ export default function App() {
       {/* Slim Header */}
       <header className="app-header-slim">
         <div className="header-brand">
-          <span className="brand-badge">DE-ICM Engine</span>
-          <h1 className="app-title-slim">Tournament ICM & Bubble Factor Analyzer</h1>
+          <span className="brand-badge">DE-ICM</span>
+          <h1 className="app-title-slim">
+            <span className="title-full">Tournament ICM & Bubble Factor Analyzer</span>
+            <span className="title-short">Tournament ICM</span>
+          </h1>
         </div>
 
         <div className="header-right">
-          <div className="preset-group-slim">
+          {/* デスクトップ用プリセットボタングループ */}
+          <div className="preset-group-slim desktop-only">
             <span className="preset-label-slim">プリセット:</span>
             {Object.keys(PRESETS).map((key) => (
               <button
@@ -397,15 +409,52 @@ export default function App() {
               </button>
             ))}
           </div>
+
+          {/* モバイル用プリセットセレクト */}
+          <div className="preset-select-wrap mobile-only">
+            <select
+              className="preset-select-mobile"
+              value={activePreset}
+              onChange={(e) => loadPreset(e.target.value)}
+              aria-label="プリセット選択"
+            >
+              {Object.keys(PRESETS).map((key) => (
+                <option key={key} value={key}>
+                  {PRESETS[key].name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* モバイル用設定トグルボタン */}
+          <button
+            type="button"
+            className={`btn-mobile-config mobile-only ${isDirty ? 'has-changes' : ''} ${isSidebarOpen ? 'active' : ''}`}
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            aria-label="設定パネルを開閉"
+          >
+            <span className="btn-mobile-config-icon">{isSidebarOpen ? '✕' :""}</span>
+            <span className="btn-mobile-config-text">{isSidebarOpen ? '閉じる' : '設定'}</span>
+            {isDirty && !isSidebarOpen && <span className="drawer-badge-dot" />}
+          </button>
         </div>
       </header>
 
       {/* Main Workspace (Fits Window Size) */}
       <div className="app-workspace">
-        {/* 引き出しタブボタン (画面中央左に配置) */}
+        {/* モバイル用背景オーバーレイ */}
+        {isSidebarOpen && (
+          <div
+            className="sidebar-backdrop mobile-only"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* 引き出しタブボタン (PC専用：画面中央左に配置) */}
         <button
           type="button"
-          className={`drawer-handle-tab ${isDirty ? 'has-changes' : ''}`}
+          className={`drawer-handle-tab desktop-only ${isDirty ? 'has-changes' : ''}`}
           style={{ left: isSidebarOpen ? '342px' : '0px' }}
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           title={isSidebarOpen ? '設定パネルを収納する (クリック)' : '設定パネルを引き出す (クリック)'}
@@ -490,7 +539,7 @@ export default function App() {
 
                 <div className="form-group-compact">
                   <label className="form-label-compact">
-                    BBサイズ <span className="req">*</span>
+                    BB <span className="req">*</span>
                   </label>
                   <input
                     type="number"
@@ -508,7 +557,7 @@ export default function App() {
               <div className="section-label-compact">スタック設定 (CL / Hero)</div>
               <div className="form-group-compact">
                 <label className="form-label-compact">
-                  <span>最大 (CL) スタック <span className="req">*</span></span>
+                  <span>チップリーダースタック <span className="req">*</span></span>
                   {params.bbSize > 0 && params.leaderStack && (
                     <small>
                       {(Number(params.leaderStack) / params.bbSize).toFixed(1)} BB
@@ -610,7 +659,7 @@ export default function App() {
 
             {/* Prizes */}
             <div className="form-section-compact">
-              <div className="section-label-compact">賞金ストラクチャ</div>
+              <div className="section-label-compact">賞金ストラクチャー</div>
               <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                 <button
                   type="button"
@@ -810,7 +859,7 @@ export default function App() {
               <div className="bf-panel-compact">
                 <div className="bf-header-compact">
                   <div className="bf-title-compact">
-                    <span>バブルファクター (BF) 分析</span>
+                    <span>バブルファクター分析</span>
                   </div>
                   <div className="villain-select-wrap">
                     <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
@@ -864,10 +913,26 @@ export default function App() {
 
                       <div className="bf-metrics-row">
                         <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">有効スタック</span>
+                          <span className="bf-metric-label-compact">スタック</span>
                           <div className="bf-metric-val-compact">
                             {Math.round(activeBfResult.effectiveStack).toLocaleString()} (
                             {(activeBfResult.effectiveStack / computationResult.bbSize).toFixed(1)} BB)
+                          </div>
+                        </div>
+
+                        <div className="bf-metric-compact">
+                          <span className="bf-metric-label-compact">勝利時スタック</span>
+                          <div className="bf-metric-val-compact gain-text">
+                            {Math.round(activeBfResult.winStack).toLocaleString()} (
+                            {(activeBfResult.winStack / computationResult.bbSize).toFixed(1)} BB)
+                          </div>
+                        </div>
+
+                        <div className="bf-metric-compact">
+                          <span className="bf-metric-label-compact">敗北時スタック</span>
+                          <div className="bf-metric-val-compact risk-text">
+                            {Math.round(activeBfResult.lossStack).toLocaleString()} (
+                            {(activeBfResult.lossStack / computationResult.bbSize).toFixed(1)} BB)
                           </div>
                         </div>
 
@@ -895,13 +960,6 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-
-                    <div className="bf-insights-slim">
-                      <strong>戦略示唆:</strong> リスクはリターンの <strong>{activeBfResult.bubbleFactor.toFixed(2)}倍</strong>。
-                      {activeBfResult.coverStatus.includes('Covered')
-                        ? ' Heroが被カバー（スタック負け）のため全滅リスクが極めて高く、大幅にタイトなレンジが必須です。'
-                        : ' Heroがカバー中のため、相手側により強力なバブルプレッシャーがかかっています。'}
-                    </div>
                   </div>
                 ) : (
                   <div className="bf-placeholder">
@@ -913,11 +971,12 @@ export default function App() {
               {/* ICM Table Card (Fills remaining height with sticky header) */}
               <div className="table-card-fill">
                 <div className="table-toolbar-slim">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>全プレイヤー ICM エクイティ一覧</span>
                     <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
                       ({computationResult.players.length}名)
                     </span>
+                    <span className="table-scroll-hint mobile-only">↔ 横スクロール</span>
                   </div>
                   <button
                     type="button"

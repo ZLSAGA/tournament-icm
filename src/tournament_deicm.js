@@ -506,6 +506,8 @@ export class DEICMBubbleFactorCalculator {
       heroStack,
       villainStack,
       effectiveStack: effStack,
+      winStack: heroStack + effStack,
+      lossStack: Math.max(0, heroStack - effStack),
       coverStatus,
       eqBase,
       eqWin,

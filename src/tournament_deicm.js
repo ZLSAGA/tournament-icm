@@ -519,4 +519,39 @@ export class DEICMBubbleFactorCalculator {
       minWinRateVal: minWinRate,
     };
   }
+
+  /**
+   * Calculate 2-player matchup Bubble Factor from both players' perspectives
+   */
+  static calculateMatchupBf({
+    stacks,
+    prizes,
+    p1Idx,
+    p2Idx,
+    baseEquities = null,
+  }) {
+    const p1 = this.calculateBf({
+      stacks,
+      prizes,
+      heroIdx: p1Idx,
+      villainIdx: p2Idx,
+      baseEquities,
+    });
+
+    const p2 = this.calculateBf({
+      stacks,
+      prizes,
+      heroIdx: p2Idx,
+      villainIdx: p1Idx,
+      baseEquities,
+    });
+
+    return {
+      p1Idx,
+      p2Idx,
+      effectiveStack: p1.effectiveStack,
+      p1,
+      p2,
+    };
+  }
 }

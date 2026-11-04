@@ -81,8 +81,9 @@ export default function App() {
   // Stored Calculation Result
   const [computationResult, setComputationResult] = useState({ success: false, loading: true });
 
-  // Selected villain & BF Result
-  const [selectedVillainIdx, setSelectedVillainIdx] = useState(null);
+  // Selected Matchup Players (P1: 基準, P2: 相手) & BF Result
+  const [selectedP1Idx, setSelectedP1Idx] = useState(null);
+  const [selectedP2Idx, setSelectedP2Idx] = useState(null);
   const [activeBfResult, setActiveBfResult] = useState(null);
   const [bfCache, setBfCache] = useState({});
 
@@ -192,9 +193,38 @@ export default function App() {
         bbSize: currentParams.bbSize,
       });
 
-      setSelectedVillainIdx(null);
-      setActiveBfResult(null);
-      setBfCache({});
+      const initialP1 = heroIdx;
+      const initialP2 = leaderIdx !== heroIdx ? leaderIdx : (heroIdx === 0 ? 1 : 0);
+      setSelectedP1Idx(initialP1);
+      setSelectedP2Idx(initialP2);
+
+      // 初期対戦 (Hero vs CL) のBFを即時計算
+      try {
+        const initBf = DEICMBubbleFactorCalculator.calculateMatchupBf({
+          stacks,
+          prizes: validPrizes,
+          p1Idx: initialP1,
+          p2Idx: initialP2,
+          baseEquities: equities,
+        });
+        const key = `${initialP1}_${initialP2}`;
+        const revKey = `${initialP2}_${initialP1}`;
+        setActiveBfResult(initBf);
+        setBfCache({
+          [key]: initBf,
+          [revKey]: {
+            p1Idx: initialP2,
+            p2Idx: initialP1,
+            effectiveStack: initBf.effectiveStack,
+            p1: initBf.p2,
+            p2: initBf.p1,
+          },
+        });
+      } catch {
+        setActiveBfResult(null);
+        setBfCache({});
+      }
+
       setIsDirty(false);
     } catch (err) {
       setComputationResult({ error: err.message });
@@ -203,36 +233,48 @@ export default function App() {
     }
   }, []);
 
-  // BF calculation on-demand for selected player
-  const handleSelectVillain = useCallback(
-    (villainIdx) => {
+  // 2者間のBF計算・更新ハンドラ
+  const handleSelectMatchup = useCallback(
+    (newP1Idx, newP2Idx) => {
       if (!computationResult.success) return;
-      const { heroIdx, stacks, validPrizes, equities } = computationResult;
+      if (newP1Idx === null || newP2Idx === null || newP1Idx === newP2Idx) return;
 
-      if (villainIdx === heroIdx || villainIdx === null || villainIdx === undefined) {
-        return;
-      }
+      setSelectedP1Idx(newP1Idx);
+      setSelectedP2Idx(newP2Idx);
 
-      setSelectedVillainIdx(villainIdx);
-
-      if (bfCache[villainIdx]) {
-        setActiveBfResult(bfCache[villainIdx]);
+      const cacheKey = `${newP1Idx}_${newP2Idx}`;
+      if (bfCache[cacheKey]) {
+        setActiveBfResult(bfCache[cacheKey]);
         return;
       }
 
       setIsBfCalculating(true);
       setTimeout(() => {
         try {
-          const bfData = DEICMBubbleFactorCalculator.calculateBf({
+          const { stacks, validPrizes, equities } = computationResult;
+          const res = DEICMBubbleFactorCalculator.calculateMatchupBf({
             stacks,
             prizes: validPrizes,
-            heroIdx,
-            villainIdx,
+            p1Idx: newP1Idx,
+            p2Idx: newP2Idx,
             baseEquities: equities,
           });
 
-          setActiveBfResult(bfData);
-          setBfCache((prev) => ({ ...prev, [villainIdx]: bfData }));
+          const reverseKey = `${newP2Idx}_${newP1Idx}`;
+          const reverseRes = {
+            p1Idx: newP2Idx,
+            p2Idx: newP1Idx,
+            effectiveStack: res.effectiveStack,
+            p1: res.p2,
+            p2: res.p1,
+          };
+
+          setActiveBfResult(res);
+          setBfCache((prev) => ({
+            ...prev,
+            [cacheKey]: res,
+            [reverseKey]: reverseRes,
+          }));
         } finally {
           setIsBfCalculating(false);
         }
@@ -240,6 +282,76 @@ export default function App() {
     },
     [computationResult, bfCache]
   );
+
+  // プレイヤー1 (基準) の変更
+  const handleSelectP1 = useCallback(
+    (newP1Idx) => {
+      if (!computationResult.success) return;
+      let targetP2 = selectedP2Idx;
+      if (targetP2 === null || targetP2 === newP1Idx) {
+        targetP2 = newP1Idx === 0 ? 1 : 0;
+      }
+      handleSelectMatchup(newP1Idx, targetP2);
+    },
+    [computationResult.success, selectedP2Idx, handleSelectMatchup]
+  );
+
+  // プレイヤー2 (相手) の変更
+  const handleSelectP2 = useCallback(
+    (newP2Idx) => {
+      if (!computationResult.success) return;
+      handleSelectMatchup(selectedP1Idx, newP2Idx);
+    },
+    [computationResult.success, selectedP1Idx, handleSelectMatchup]
+  );
+
+  // プレイヤー1とプレイヤー2の入れ替え (⇄)
+  const handleSwapPlayers = useCallback(() => {
+    if (selectedP1Idx !== null && selectedP2Idx !== null) {
+      handleSelectMatchup(selectedP2Idx, selectedP1Idx);
+    }
+  }, [selectedP1Idx, selectedP2Idx, handleSelectMatchup]);
+
+  // 現在のP1に対する全プレイヤーのBFを一括計算
+  const handleCalculateAllBfForP1 = useCallback(() => {
+    if (!computationResult.success || selectedP1Idx === null) return;
+    setIsBfCalculating(true);
+    setTimeout(() => {
+      try {
+        const { stacks, validPrizes, equities, players } = computationResult;
+        const newCache = { ...bfCache };
+        players.forEach((p) => {
+          if (p.idx !== selectedP1Idx) {
+            const key = `${selectedP1Idx}_${p.idx}`;
+            if (!newCache[key]) {
+              const res = DEICMBubbleFactorCalculator.calculateMatchupBf({
+                stacks,
+                prizes: validPrizes,
+                p1Idx: selectedP1Idx,
+                p2Idx: p.idx,
+                baseEquities: equities,
+              });
+              const revKey = `${p.idx}_${selectedP1Idx}`;
+              newCache[key] = res;
+              newCache[revKey] = {
+                p1Idx: p.idx,
+                p2Idx: selectedP1Idx,
+                effectiveStack: res.effectiveStack,
+                p1: res.p2,
+                p2: res.p1,
+              };
+            }
+          }
+        });
+        setBfCache(newCache);
+        if (selectedP2Idx !== null && newCache[`${selectedP1Idx}_${selectedP2Idx}`]) {
+          setActiveBfResult(newCache[`${selectedP1Idx}_${selectedP2Idx}`]);
+        }
+      } finally {
+        setIsBfCalculating(false);
+      }
+    }, 10);
+  }, [computationResult, selectedP1Idx, selectedP2Idx, bfCache]);
 
   // Initial Calculation
   useEffect(() => {
@@ -325,14 +437,17 @@ export default function App() {
       else if (sortField === 'equity') comp = a.equity - b.equity;
       else if (sortField === 'id') comp = a.idx - b.idx;
       else if (sortField === 'bf') {
-        const bfA = bfCache[a.idx] ? bfCache[a.idx].bubbleFactor : 0;
-        const bfB = bfCache[b.idx] ? bfCache[b.idx].bubbleFactor : 0;
-        comp = bfA - bfB;
+        const getBf = (idx) => {
+          if (idx === selectedP1Idx) return -9999;
+          const key = `${selectedP1Idx}_${idx}`;
+          return bfCache[key] ? bfCache[key].p1.bubbleFactor : 0;
+        };
+        comp = getBf(a.idx) - getBf(b.idx);
       }
       return sortDirection === 'desc' ? -comp : comp;
     });
     return list;
-  }, [computationResult.players, sortField, sortDirection, bfCache]);
+  }, [computationResult.players, sortField, sortDirection, bfCache, selectedP1Idx]);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -347,6 +462,7 @@ export default function App() {
   const handleExportCSV = () => {
     if (!computationResult.success) return;
     const { players } = computationResult;
+    const p1Player = players[selectedP1Idx] || players[0];
     const headers = [
       'Player_ID',
       'Role',
@@ -355,19 +471,28 @@ export default function App() {
       'Chip_Share_Pct',
       'ICM_Equity_Dollar',
       'Equity_Share_Pct',
-      'Bubble_Factor_vs_Hero',
+      `Bubble_Factor_vs_${p1Player.id}`,
     ];
 
-    const rows = players.map((p) => [
-      p.id,
-      p.role,
-      Math.round(p.stack),
-      p.stackBB.toFixed(1),
-      p.chipPct.toFixed(2) + '%',
-      p.equity.toFixed(2),
-      p.equityPct.toFixed(2) + '%',
-      bfCache[p.idx] ? bfCache[p.idx].bubbleFactor : '-',
-    ]);
+    const rows = players.map((p) => {
+      const key = `${selectedP1Idx}_${p.idx}`;
+      const bfVal =
+        p.idx === selectedP1Idx
+          ? 'Base (Self)'
+          : bfCache[key]
+          ? bfCache[key].p1.bubbleFactor
+          : '-';
+      return [
+        p.id,
+        p.role,
+        Math.round(p.stack),
+        p.stackBB.toFixed(1),
+        p.chipPct.toFixed(2) + '%',
+        p.equity.toFixed(2),
+        p.equityPct.toFixed(2) + '%',
+        bfVal,
+      ];
+    });
 
     const csvContent =
       'data:text/csv;charset=utf-8,' +
@@ -376,11 +501,15 @@ export default function App() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'tournament_deicm_results.csv');
+    link.setAttribute('download', `tournament_deicm_results_vs_${p1Player.id}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  // Resolve current players for UI
+  const p1Player = computationResult.players?.[selectedP1Idx];
+  const p2Player = computationResult.players?.[selectedP2Idx];
 
   return (
     <div className="app-viewport">
@@ -855,107 +984,239 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Compact Bubble Factor Panel */}
+              {/* 2-Player Matchup Bubble Factor Panel */}
               <div className="bf-panel-compact">
                 <div className="bf-header-compact">
                   <div className="bf-title-compact">
-                    <span>バブルファクター分析</span>
+                    <span>バブルファクター分析 (2者間対決)</span>
                   </div>
-                  <div className="villain-select-wrap">
-                    <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      相手を選択:
-                    </label>
-                    <select
-                      className="villain-select"
-                      value={selectedVillainIdx !== null ? selectedVillainIdx : ''}
-                      onChange={(e) => handleSelectVillain(Number(e.target.value))}
-                    >
-                      <option value="" disabled>-- 相手を選択 --</option>
-                      {computationResult.players
-                        .filter((p) => !p.isHero)
-                        .map((p) => (
+
+                  {/* Matchup Selection Controls */}
+                  <div className="matchup-controls-wrap">
+                    <div className="matchup-selector-item">
+                      <label className="matchup-label">プレイヤー1 (基準):</label>
+                      <select
+                        className="player-select"
+                        value={selectedP1Idx !== null ? selectedP1Idx : ''}
+                        onChange={(e) => handleSelectP1(Number(e.target.value))}
+                        aria-label="プレイヤー1 (基準) 選択"
+                      >
+                        {computationResult.players.map((p) => (
                           <option key={p.idx} value={p.idx}>
-                            {p.id} {p.isCL ? '(CL)' : ''} - {Math.round(p.stack).toLocaleString()} ({p.stackBB.toFixed(1)} BB)
+                            {p.id} {p.isHero ? '(Hero)' : p.isCL ? '(CL)' : ''} - {Math.round(p.stack).toLocaleString()} ({p.stackBB.toFixed(1)} BB)
                           </option>
                         ))}
-                    </select>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-swap-players"
+                      onClick={handleSwapPlayers}
+                      title="プレイヤー1とプレイヤー2を入れ替え (⇄)"
+                      aria-label="プレイヤーを入れ替え"
+                    >
+                      <span className="swap-icon">⇄</span>
+                      <span className="swap-text">入替</span>
+                    </button>
+
+                    <div className="matchup-selector-item">
+                      <label className="matchup-label">プレイヤー2 (相手):</label>
+                      <select
+                        className="player-select"
+                        value={selectedP2Idx !== null ? selectedP2Idx : ''}
+                        onChange={(e) => handleSelectP2(Number(e.target.value))}
+                        aria-label="プレイヤー2 (相手) 選択"
+                      >
+                        <option value="" disabled>-- 相手を選択 --</option>
+                        {computationResult.players
+                          .filter((p) => p.idx !== selectedP1Idx)
+                          .map((p) => (
+                            <option key={p.idx} value={p.idx}>
+                              {p.id} {p.isHero ? '(Hero)' : p.isCL ? '(CL)' : ''} - {Math.round(p.stack).toLocaleString()} ({p.stackBB.toFixed(1)} BB)
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-calc-all-bf"
+                      onClick={handleCalculateAllBfForP1}
+                      disabled={isBfCalculating}
+                      title="現在の基準プレイヤーに対する全プレイヤーのBFを一括計算"
+                    >
+                      全BF一括計算
+                    </button>
                   </div>
                 </div>
 
                 {isBfCalculating ? (
                   <div className="bf-loading">
-                    <span>選択された相手とのBFを計算中...</span>
+                    <span>2者間のバブルファクターを計算中...</span>
                   </div>
-                ) : activeBfResult ? (
-                  <div>
-                    <div className="bf-content-compact">
-                      <div className="bf-score-card-compact">
-                        <div className="bf-score-row">
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700 }}>BF</span>
-                          <span className="bf-number-compact">{activeBfResult.bubbleFactor.toFixed(3)}</span>
+                ) : activeBfResult && p1Player && p2Player ? (
+                  <div className="matchup-display-area">
+                    {/* Matchup Header Info */}
+                    <div className="matchup-info-strip">
+                      <div className="matchup-vs-badge">
+                        <span className="vs-player p1-tag">{p1Player.id}</span>
+                        <span className="vs-divider">VS</span>
+                        <span className="vs-player p2-tag">{p2Player.id}</span>
+                      </div>
+                      <div className="matchup-eff-info">
+                        <span>有効スタック: </span>
+                        <strong>{Math.round(activeBfResult.effectiveStack).toLocaleString()}</strong>
+                        <span className="eff-bb"> ({(activeBfResult.effectiveStack / computationResult.bbSize).toFixed(1)} BB)</span>
+                      </div>
+                    </div>
+
+                    {/* Side-by-Side Dual BF Cards */}
+                    <div className="matchup-cards-grid">
+                      {/* Card 1: Player 1 Perspective */}
+                      <div className="player-bf-card p1-perspective">
+                        <div className="card-top-row">
+                          <div className="card-player-id">
+                            <span className="player-name-bold">{p1Player.id} 視点</span>
+                            {p1Player.isHero && <span className="badge badge-hero">Hero</span>}
+                            {p1Player.isCL && <span className="badge badge-cl">CL</span>}
+                          </div>
                           <span
                             className={`badge ${
-                              activeBfResult.coverStatus.includes('Covered')
+                              activeBfResult.p1.coverStatus.includes('Covered')
                                 ? 'badge-covered'
-                                : activeBfResult.coverStatus.includes('Covering')
+                                : activeBfResult.p1.coverStatus.includes('Covering')
                                 ? 'badge-covering'
                                 : 'badge-equal'
                             }`}
                           >
-                            {activeBfResult.coverStatus}
+                            {activeBfResult.p1.coverStatus}
                           </span>
                         </div>
-                        <div className="bf-winrate-inline">
-                          <span style={{ color: 'var(--text-dim)' }}>必要勝率:</span>
-                          <span className="bf-winrate-val-compact">{activeBfResult.minWinRateRequired}</span>
+
+                        <div className="card-score-box">
+                          <div className="score-primary">
+                            <span className="score-label">Bubble Factor</span>
+                            <span className="score-number">{activeBfResult.p1.bubbleFactor.toFixed(3)}</span>
+                          </div>
+                          <div className="score-winrate">
+                            <span className="winrate-label">必要勝率</span>
+                            <span className="winrate-val">{activeBfResult.p1.minWinRateRequired}</span>
+                          </div>
+                        </div>
+
+                        <div className="card-metrics-grid">
+                          <div className="metric-cell">
+                            <span className="m-label">基準エクイティ</span>
+                            <span className="m-val">${activeBfResult.p1.eqBase.toFixed(2)}</span>
+                          </div>
+                          <div className="metric-cell">
+                            <span className="m-label">勝利時エクイティ</span>
+                            <span className="m-val gain-text">
+                              ${activeBfResult.p1.eqWin.toFixed(2)}{' '}
+                              <small>(+${activeBfResult.p1.gain.toFixed(2)})</small>
+                            </span>
+                          </div>
+                          <div className="metric-cell">
+                            <span className="m-label">敗北時エクイティ</span>
+                            <span className="m-val risk-text">
+                              ${activeBfResult.p1.eqLoss.toFixed(2)}{' '}
+                              <small>(-${activeBfResult.p1.risk.toFixed(2)})</small>
+                            </span>
+                          </div>
+                          <div className="metric-cell">
+                            <span className="m-label">現在スタック</span>
+                            <span className="m-val">
+                              {Math.round(p1Player.stack).toLocaleString()} ({p1Player.stackBB.toFixed(1)} BB)
+                            </span>
+                          </div>
+                          <div className="metric-cell">
+                            <span className="m-label">勝利時スタック</span>
+                            <span className="m-val gain-text">
+                              {Math.round(activeBfResult.p1.winStack).toLocaleString()} (
+                              {(activeBfResult.p1.winStack / computationResult.bbSize).toFixed(1)} BB)
+                            </span>
+                          </div>
+                          <div className="metric-cell">
+                            <span className="m-label">敗北時スタック</span>
+                            <span className="m-val risk-text">
+                              {Math.round(activeBfResult.p1.lossStack).toLocaleString()} (
+                              {(activeBfResult.p1.lossStack / computationResult.bbSize).toFixed(1)} BB)
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="bf-metrics-row">
-                        <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">スタック</span>
-                          <div className="bf-metric-val-compact">
-                            {Math.round(activeBfResult.effectiveStack).toLocaleString()} (
-                            {(activeBfResult.effectiveStack / computationResult.bbSize).toFixed(1)} BB)
+                      {/* Card 2: Player 2 Perspective */}
+                      <div className="player-bf-card p2-perspective">
+                        <div className="card-top-row">
+                          <div className="card-player-id">
+                            <span className="player-name-bold">{p2Player.id} 視点</span>
+                            {p2Player.isHero && <span className="badge badge-hero">Hero</span>}
+                            {p2Player.isCL && <span className="badge badge-cl">CL</span>}
+                          </div>
+                          <span
+                            className={`badge ${
+                              activeBfResult.p2.coverStatus.includes('Covered')
+                                ? 'badge-covered'
+                                : activeBfResult.p2.coverStatus.includes('Covering')
+                                ? 'badge-covering'
+                                : 'badge-equal'
+                            }`}
+                          >
+                            {activeBfResult.p2.coverStatus}
+                          </span>
+                        </div>
+
+                        <div className="card-score-box">
+                          <div className="score-primary">
+                            <span className="score-label">Bubble Factor</span>
+                            <span className="score-number">{activeBfResult.p2.bubbleFactor.toFixed(3)}</span>
+                          </div>
+                          <div className="score-winrate">
+                            <span className="winrate-label">必要勝率</span>
+                            <span className="winrate-val">{activeBfResult.p2.minWinRateRequired}</span>
                           </div>
                         </div>
 
-                        <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">勝利時スタック</span>
-                          <div className="bf-metric-val-compact gain-text">
-                            {Math.round(activeBfResult.winStack).toLocaleString()} (
-                            {(activeBfResult.winStack / computationResult.bbSize).toFixed(1)} BB)
+                        <div className="card-metrics-grid">
+                          <div className="metric-cell">
+                            <span className="m-label">基準エクイティ</span>
+                            <span className="m-val">${activeBfResult.p2.eqBase.toFixed(2)}</span>
                           </div>
-                        </div>
-
-                        <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">敗北時スタック</span>
-                          <div className="bf-metric-val-compact risk-text">
-                            {Math.round(activeBfResult.lossStack).toLocaleString()} (
-                            {(activeBfResult.lossStack / computationResult.bbSize).toFixed(1)} BB)
+                          <div className="metric-cell">
+                            <span className="m-label">勝利時エクイティ</span>
+                            <span className="m-val gain-text">
+                              ${activeBfResult.p2.eqWin.toFixed(2)}{' '}
+                              <small>(+${activeBfResult.p2.gain.toFixed(2)})</small>
+                            </span>
                           </div>
-                        </div>
-
-                        <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">基準エクイティ</span>
-                          <div className="bf-metric-val-compact">
-                            ${activeBfResult.eqBase.toFixed(2)}
+                          <div className="metric-cell">
+                            <span className="m-label">敗北時エクイティ</span>
+                            <span className="m-val risk-text">
+                              ${activeBfResult.p2.eqLoss.toFixed(2)}{' '}
+                              <small>(-${activeBfResult.p2.risk.toFixed(2)})</small>
+                            </span>
                           </div>
-                        </div>
-
-                        <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">勝利時エクイティ</span>
-                          <div className="bf-metric-val-compact gain-text">
-                            ${activeBfResult.eqWin.toFixed(2)}{' '}
-                            <small>(+${activeBfResult.gain.toFixed(2)})</small>
+                          <div className="metric-cell">
+                            <span className="m-label">現在スタック</span>
+                            <span className="m-val">
+                              {Math.round(p2Player.stack).toLocaleString()} ({p2Player.stackBB.toFixed(1)} BB)
+                            </span>
                           </div>
-                        </div>
-
-                        <div className="bf-metric-compact">
-                          <span className="bf-metric-label-compact">敗北時エクイティ</span>
-                          <div className="bf-metric-val-compact risk-text">
-                            ${activeBfResult.eqLoss.toFixed(2)}{' '}
-                            <small>(-${activeBfResult.risk.toFixed(2)})</small>
+                          <div className="metric-cell">
+                            <span className="m-label">勝利時スタック</span>
+                            <span className="m-val gain-text">
+                              {Math.round(activeBfResult.p2.winStack).toLocaleString()} (
+                              {(activeBfResult.p2.winStack / computationResult.bbSize).toFixed(1)} BB)
+                            </span>
+                          </div>
+                          <div className="metric-cell">
+                            <span className="m-label">敗北時スタック</span>
+                            <span className="m-val risk-text">
+                              {Math.round(activeBfResult.p2.lossStack).toLocaleString()} (
+                              {(activeBfResult.p2.lossStack / computationResult.bbSize).toFixed(1)} BB)
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -963,7 +1224,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="bf-placeholder">
-                    下記の表の行をクリックするか、右上のプルダウンから相手を選択すると、その相手とのBFと必要勝率を瞬時に計算します。
+                    上部のセレクターまたは下記の表からプレイヤーを選択すると、2者間のバブルファクターと必要勝率を瞬時に算出・対比します。
                   </div>
                 )}
               </div>
@@ -1005,31 +1266,37 @@ export default function App() {
                         </th>
                         <th>エクイティ シェア</th>
                         <th className="sortable" onClick={() => handleSort('bf')}>
-                          対Hero BF {sortField === 'bf' ? (sortDirection === 'desc' ? '▼' : '▲') : ''}
+                          対 {p1Player?.id || 'P1'} BF {sortField === 'bf' ? (sortDirection === 'desc' ? '▼' : '▲') : ''}
                         </th>
-                        <th style={{ textAlign: 'center' }}>BF分析</th>
+                        <th style={{ textAlign: 'center' }}>BF対決操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sortedPlayers.map((p) => {
-                        const isSelectedVillain = p.idx === selectedVillainIdx;
+                        const isP1 = p.idx === selectedP1Idx;
+                        const isP2 = p.idx === selectedP2Idx;
+                        const cacheKey = `${selectedP1Idx}_${p.idx}`;
+                        const bfItem = bfCache[cacheKey];
+
                         let rowClass = '';
                         if (p.isHero) rowClass = 'row-hero';
                         else if (p.isCL) rowClass = 'row-cl';
-                        if (isSelectedVillain)
-                          rowClass += (rowClass ? ' ' : '') + 'row-selected-villain';
+                        if (isP1) rowClass += (rowClass ? ' ' : '') + 'row-p1-base';
+                        else if (isP2) rowClass += (rowClass ? ' ' : '') + 'row-p2-selected';
 
                         return (
                           <tr
                             key={p.idx}
                             className={rowClass}
-                            style={{ cursor: p.isHero ? 'default' : 'pointer' }}
+                            style={{ cursor: isP1 ? 'default' : 'pointer' }}
                             onClick={() => {
-                              if (!p.isHero) handleSelectVillain(p.idx);
+                              if (!isP1) handleSelectP2(p.idx);
                             }}
                           >
-                            <td style={{ fontWeight: p.isHero || p.isCL ? 700 : 500 }}>
+                            <td style={{ fontWeight: p.isHero || p.isCL || isP1 || isP2 ? 700 : 500 }}>
                               {p.id}
+                              {isP1 && <span className="mini-badge-p1">P1</span>}
+                              {isP2 && <span className="mini-badge-p2">P2</span>}
                             </td>
                             <td>
                               {p.isHero ? (
@@ -1062,11 +1329,11 @@ export default function App() {
                             </td>
                             <td>{p.equityPct.toFixed(2)}%</td>
                             <td>
-                              {p.isHero ? (
-                                <span style={{ color: 'var(--text-dim)' }}>-</span>
-                              ) : bfCache[p.idx] ? (
+                              {isP1 ? (
+                                <span className="base-player-marker">基準</span>
+                              ) : bfItem ? (
                                 <span className="bf-mini-pill">
-                                  {bfCache[p.idx].bubbleFactor.toFixed(3)}
+                                  {bfItem.p1.bubbleFactor.toFixed(3)}
                                 </span>
                               ) : (
                                 <span style={{ color: 'var(--text-dim)', fontSize: '0.74rem' }}>
@@ -1075,19 +1342,33 @@ export default function App() {
                               )}
                             </td>
                             <td style={{ textAlign: 'center' }}>
-                              {!p.isHero && (
-                                <button
-                                  type="button"
-                                  className={`btn-select-villain ${
-                                    isSelectedVillain ? 'active' : ''
-                                  }`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectVillain(p.idx);
-                                  }}
-                                >
-                                  {isSelectedVillain ? '選択中' : 'BFを計算'}
-                                </button>
+                              {isP1 ? (
+                                <span className="badge-current-base">基準(P1)</span>
+                              ) : (
+                                <div className="row-action-btns">
+                                  <button
+                                    type="button"
+                                    className={`btn-select-villain ${isP2 ? 'active' : ''}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectP2(p.idx);
+                                    }}
+                                    title="プレイヤー2 (相手) として選択"
+                                  >
+                                    {isP2 ? '相手選択中' : '相手に選択'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-set-base"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectP1(p.idx);
+                                    }}
+                                    title="このプレイヤーを基準(P1)に設定"
+                                  >
+                                    基準にする
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>

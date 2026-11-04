@@ -380,6 +380,29 @@ class DEICMBubbleFactorCalculator:
             "min_win_rate_required": f"{min_win_rate * 100:.1f}%",
         }
 
+    def calculate_matchup_bf(
+        self,
+        stacks: np.ndarray,
+        prizes: np.ndarray,
+        p1_idx: int,
+        p2_idx: int,
+        base_equities: np.ndarray = None,
+    ) -> dict:
+        """任意の2者間 (p1 と p2) の対決において双方の視点からBFを算出"""
+        p1_res = self.calculate_bf(
+            stacks, prizes, hero_idx=p1_idx, villain_idx=p2_idx, base_equities=base_equities
+        )
+        p2_res = self.calculate_bf(
+            stacks, prizes, hero_idx=p2_idx, villain_idx=p1_idx, base_equities=base_equities
+        )
+        return {
+            "p1_idx": p1_idx,
+            "p2_idx": p2_idx,
+            "effective_stack": p1_res["effective_stack"],
+            "p1": p1_res,
+            "p2": p2_res,
+        }
+
 
 # ==============================================================================
 # Component 4: Export and Visualization Utilities

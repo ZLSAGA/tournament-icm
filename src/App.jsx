@@ -86,6 +86,8 @@ export default function App() {
   const [selectedP2Idx, setSelectedP2Idx] = useState(null);
   const [activeBfResult, setActiveBfResult] = useState(null);
   const [bfCache, setBfCache] = useState({});
+  // BF詳細内訳（基準エクイティやスタック変化などの6項目）の表示/非表示トグル
+  const [showBfDetails, setShowBfDetails] = useState(false);
 
   // Resolve prizes array
   const resolvePrizes = useCallback((type, count, amount, customList) => {
@@ -468,9 +470,7 @@ export default function App() {
       'Role',
       'Stack',
       'Stack_BB',
-      'Chip_Share_Pct',
       'ICM_Equity_Dollar',
-      'Equity_Share_Pct',
       `Bubble_Factor_vs_${p1Player.id}`,
     ];
 
@@ -487,9 +487,7 @@ export default function App() {
         p.role,
         Math.round(p.stack),
         p.stackBB.toFixed(1),
-        p.chipPct.toFixed(2) + '%',
         p.equity.toFixed(2),
-        p.equityPct.toFixed(2) + '%',
         bfVal,
       ];
     });
@@ -920,75 +918,20 @@ export default function App() {
         <main className="dashboard-main">
           {computationResult.success && (
             <>
-              {/* Summary Metrics Bar (1-row slim: 総チップ, 平均スタック, Blind, Hero, Chipleader) */}
-              <div className="stats-summary-slim">
-                {/* 1. TOTAL STACK */}
-                <div className="stat-box-slim">
-                  <span className="stat-label-slim">TOTAL STACK</span>
-                  <span className="stat-value-slim">
-                    {computationResult.totalChips.toLocaleString()}
-                  </span>
-                  <span className="stat-sub-slim">
-                    残り {computationResult.summary.remainingPlayers} 名
-                  </span>
-                </div>
-
-                {/* 2. AVG STACK */}
-                <div className="stat-box-slim">
-                  <span className="stat-label-slim">AVG STACK</span>
-                  <span className="stat-value-slim">
-                    {Math.round(computationResult.summary.avgStack).toLocaleString()}
-                  </span>
-                  <span className="stat-sub-slim">
-                    {(computationResult.summary.avgStack / computationResult.bbSize).toFixed(1)} BB
-                  </span>
-                </div>
-
-                {/* 3. Blind */}
-                <div className="stat-box-slim">
-                  <span className="stat-label-slim">Blind</span>
-                  <span className="stat-value-slim">
-                    {computationResult.bbSize.toLocaleString()}
-                  </span>
-                  <span className="stat-sub-slim">
-                    総チップ計 {(computationResult.totalChips / computationResult.bbSize).toFixed(0)} BB
-                  </span>
-                </div>
-
-                {/* 4. Hero */}
-                <div className="stat-box-slim highlight-hero">
-                  <span className="stat-label-slim">
-                    Hero <span className="badge badge-hero">Hero</span>
-                  </span>
-                  <span className="stat-value-slim" style={{ color: 'var(--hero-color)' }}>
-                    {Number(computationResult.players[computationResult.heroIdx]?.stack).toLocaleString()}
-                  </span>
-                  <span className="stat-sub-slim">
-                    {computationResult.players[computationResult.heroIdx]?.stackBB.toFixed(1)} BB (
-                    {computationResult.players[computationResult.heroIdx]?.chipPct.toFixed(1)}%)
-                  </span>
-                </div>
-
-                {/* 5. Chipleader */}
-                <div className="stat-box-slim highlight-cl">
-                  <span className="stat-label-slim">
-                    Chipleader <span className="badge badge-cl">CL</span>
-                  </span>
-                  <span className="stat-value-slim" style={{ color: 'var(--cl-color)' }}>
-                    {Number(computationResult.players[computationResult.leaderIdx]?.stack).toLocaleString()}
-                  </span>
-                  <span className="stat-sub-slim">
-                    {computationResult.players[computationResult.leaderIdx]?.stackBB.toFixed(1)} BB (
-                    {computationResult.players[computationResult.leaderIdx]?.chipPct.toFixed(1)}%)
-                  </span>
-                </div>
-              </div>
-
               {/* 2-Player Matchup Bubble Factor Panel */}
               <div className="bf-panel-compact">
                 <div className="bf-header-compact">
                   <div className="bf-title-compact">
                     <span>バブルファクター分析 (2者間対決)</span>
+                    <div className="avg-stack-badge">
+                      <span className="avg-badge-label">AVG</span>
+                      <span className="avg-badge-val">
+                        {Math.round(computationResult.summary.avgStack).toLocaleString()}
+                      </span>
+                      <span className="avg-badge-bb">
+                        ({(computationResult.summary.avgStack / computationResult.bbSize).toFixed(1)} BB)
+                      </span>
+                    </div>
                   </div>
 
                   {/* Matchup Selection Controls */}
@@ -1038,16 +981,6 @@ export default function App() {
                           ))}
                       </select>
                     </div>
-
-                    <button
-                      type="button"
-                      className="btn-calc-all-bf"
-                      onClick={handleCalculateAllBfForP1}
-                      disabled={isBfCalculating}
-                      title="現在の基準プレイヤーに対する全プレイヤーのBFを一括計算"
-                    >
-                      全BF一括計算
-                    </button>
                   </div>
                 </div>
 
@@ -1059,16 +992,27 @@ export default function App() {
                   <div className="matchup-display-area">
                     {/* Matchup Header Info */}
                     <div className="matchup-info-strip">
-                      <div className="matchup-vs-badge">
-                        <span className="vs-player p1-tag">{p1Player.id}</span>
-                        <span className="vs-divider">VS</span>
-                        <span className="vs-player p2-tag">{p2Player.id}</span>
+                      <div className="matchup-info-left">
+                        <div className="matchup-vs-badge">
+                          <span className="vs-player p1-tag">{p1Player.id}</span>
+                          <span className="vs-divider">VS</span>
+                          <span className="vs-player p2-tag">{p2Player.id}</span>
+                        </div>
+                        <div className="matchup-eff-info">
+                          <span>有効スタック: </span>
+                          <strong>{Math.round(activeBfResult.effectiveStack).toLocaleString()}</strong>
+                          <span className="eff-bb"> ({(activeBfResult.effectiveStack / computationResult.bbSize).toFixed(1)} BB)</span>
+                        </div>
                       </div>
-                      <div className="matchup-eff-info">
-                        <span>有効スタック: </span>
-                        <strong>{Math.round(activeBfResult.effectiveStack).toLocaleString()}</strong>
-                        <span className="eff-bb"> ({(activeBfResult.effectiveStack / computationResult.bbSize).toFixed(1)} BB)</span>
-                      </div>
+
+                      <button
+                        type="button"
+                        className="btn-toggle-bf-details"
+                        onClick={() => setShowBfDetails((prev) => !prev)}
+                        title="基準エクイティやスタック変化などの詳細6項目の表示/非表示を切り替え"
+                      >
+                        {showBfDetails ? '内訳を折りたたむ ▲' : '詳細内訳を表示 (6項目) ▼'}
+                      </button>
                     </div>
 
                     {/* Side-by-Side Dual BF Cards */}
@@ -1105,46 +1049,48 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="card-metrics-grid">
-                          <div className="metric-cell">
-                            <span className="m-label">基準エクイティ</span>
-                            <span className="m-val">${activeBfResult.p1.eqBase.toFixed(2)}</span>
+                        {showBfDetails && (
+                          <div className="card-metrics-grid">
+                            <div className="metric-cell">
+                              <span className="m-label">基準エクイティ</span>
+                              <span className="m-val">${activeBfResult.p1.eqBase.toFixed(2)}</span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">勝利時エクイティ</span>
+                              <span className="m-val gain-text">
+                                ${activeBfResult.p1.eqWin.toFixed(2)}{' '}
+                                <small>(+${activeBfResult.p1.gain.toFixed(2)})</small>
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">敗北時エクイティ</span>
+                              <span className="m-val risk-text">
+                                ${activeBfResult.p1.eqLoss.toFixed(2)}{' '}
+                                <small>(-${activeBfResult.p1.risk.toFixed(2)})</small>
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">現在スタック</span>
+                              <span className="m-val">
+                                {Math.round(p1Player.stack).toLocaleString()} ({p1Player.stackBB.toFixed(1)} BB)
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">勝利時スタック</span>
+                              <span className="m-val gain-text">
+                                {Math.round(activeBfResult.p1.winStack).toLocaleString()} (
+                                {(activeBfResult.p1.winStack / computationResult.bbSize).toFixed(1)} BB)
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">敗北時スタック</span>
+                              <span className="m-val risk-text">
+                                {Math.round(activeBfResult.p1.lossStack).toLocaleString()} (
+                                {(activeBfResult.p1.lossStack / computationResult.bbSize).toFixed(1)} BB)
+                              </span>
+                            </div>
                           </div>
-                          <div className="metric-cell">
-                            <span className="m-label">勝利時エクイティ</span>
-                            <span className="m-val gain-text">
-                              ${activeBfResult.p1.eqWin.toFixed(2)}{' '}
-                              <small>(+${activeBfResult.p1.gain.toFixed(2)})</small>
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">敗北時エクイティ</span>
-                            <span className="m-val risk-text">
-                              ${activeBfResult.p1.eqLoss.toFixed(2)}{' '}
-                              <small>(-${activeBfResult.p1.risk.toFixed(2)})</small>
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">現在スタック</span>
-                            <span className="m-val">
-                              {Math.round(p1Player.stack).toLocaleString()} ({p1Player.stackBB.toFixed(1)} BB)
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">勝利時スタック</span>
-                            <span className="m-val gain-text">
-                              {Math.round(activeBfResult.p1.winStack).toLocaleString()} (
-                              {(activeBfResult.p1.winStack / computationResult.bbSize).toFixed(1)} BB)
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">敗北時スタック</span>
-                            <span className="m-val risk-text">
-                              {Math.round(activeBfResult.p1.lossStack).toLocaleString()} (
-                              {(activeBfResult.p1.lossStack / computationResult.bbSize).toFixed(1)} BB)
-                            </span>
-                          </div>
-                        </div>
+                        )}
                       </div>
 
                       {/* Card 2: Player 2 Perspective */}
@@ -1179,46 +1125,48 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="card-metrics-grid">
-                          <div className="metric-cell">
-                            <span className="m-label">基準エクイティ</span>
-                            <span className="m-val">${activeBfResult.p2.eqBase.toFixed(2)}</span>
+                        {showBfDetails && (
+                          <div className="card-metrics-grid">
+                            <div className="metric-cell">
+                              <span className="m-label">基準エクイティ</span>
+                              <span className="m-val">${activeBfResult.p2.eqBase.toFixed(2)}</span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">勝利時エクイティ</span>
+                              <span className="m-val gain-text">
+                                ${activeBfResult.p2.eqWin.toFixed(2)}{' '}
+                                <small>(+${activeBfResult.p2.gain.toFixed(2)})</small>
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">敗北時エクイティ</span>
+                              <span className="m-val risk-text">
+                                ${activeBfResult.p2.eqLoss.toFixed(2)}{' '}
+                                <small>(-${activeBfResult.p2.risk.toFixed(2)})</small>
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">現在スタック</span>
+                              <span className="m-val">
+                                {Math.round(p2Player.stack).toLocaleString()} ({p2Player.stackBB.toFixed(1)} BB)
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">勝利時スタック</span>
+                              <span className="m-val gain-text">
+                                {Math.round(activeBfResult.p2.winStack).toLocaleString()} (
+                                {(activeBfResult.p2.winStack / computationResult.bbSize).toFixed(1)} BB)
+                              </span>
+                            </div>
+                            <div className="metric-cell">
+                              <span className="m-label">敗北時スタック</span>
+                              <span className="m-val risk-text">
+                                {Math.round(activeBfResult.p2.lossStack).toLocaleString()} (
+                                {(activeBfResult.p2.lossStack / computationResult.bbSize).toFixed(1)} BB)
+                              </span>
+                            </div>
                           </div>
-                          <div className="metric-cell">
-                            <span className="m-label">勝利時エクイティ</span>
-                            <span className="m-val gain-text">
-                              ${activeBfResult.p2.eqWin.toFixed(2)}{' '}
-                              <small>(+${activeBfResult.p2.gain.toFixed(2)})</small>
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">敗北時エクイティ</span>
-                            <span className="m-val risk-text">
-                              ${activeBfResult.p2.eqLoss.toFixed(2)}{' '}
-                              <small>(-${activeBfResult.p2.risk.toFixed(2)})</small>
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">現在スタック</span>
-                            <span className="m-val">
-                              {Math.round(p2Player.stack).toLocaleString()} ({p2Player.stackBB.toFixed(1)} BB)
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">勝利時スタック</span>
-                            <span className="m-val gain-text">
-                              {Math.round(activeBfResult.p2.winStack).toLocaleString()} (
-                              {(activeBfResult.p2.winStack / computationResult.bbSize).toFixed(1)} BB)
-                            </span>
-                          </div>
-                          <div className="metric-cell">
-                            <span className="m-label">敗北時スタック</span>
-                            <span className="m-val risk-text">
-                              {Math.round(activeBfResult.p2.lossStack).toLocaleString()} (
-                              {(activeBfResult.p2.lossStack / computationResult.bbSize).toFixed(1)} BB)
-                            </span>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1260,11 +1208,9 @@ export default function App() {
                           スタック {sortField === 'stack' ? (sortDirection === 'desc' ? '▼' : '▲') : ''}
                         </th>
                         <th>BB</th>
-                        <th>チップシェア</th>
                         <th className="sortable" onClick={() => handleSort('equity')}>
                           ICM エクイティ ($) {sortField === 'equity' ? (sortDirection === 'desc' ? '▼' : '▲') : ''}
                         </th>
-                        <th>エクイティ シェア</th>
                         <th className="sortable" onClick={() => handleSort('bf')}>
                           対 {p1Player?.id || 'P1'} BF {sortField === 'bf' ? (sortDirection === 'desc' ? '▼' : '▲') : ''}
                         </th>
@@ -1311,23 +1257,9 @@ export default function App() {
                               {Math.round(p.stack).toLocaleString()}
                             </td>
                             <td>{p.stackBB.toFixed(1)} BB</td>
-                            <td>
-                              <div className="share-bar-container">
-                                <div className="share-bar-bg">
-                                  <div
-                                    className={`share-bar-fill ${
-                                      p.isHero ? 'hero' : p.isCL ? 'cl' : ''
-                                    }`}
-                                    style={{ width: `${Math.min(100, p.chipPct * 2)}%` }}
-                                  />
-                                </div>
-                                <span>{p.chipPct.toFixed(2)}%</span>
-                              </div>
-                            </td>
                             <td style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>
                               ${p.equity.toFixed(2)}
                             </td>
-                            <td>{p.equityPct.toFixed(2)}%</td>
                             <td>
                               {isP1 ? (
                                 <span className="base-player-marker">基準</span>

@@ -697,28 +697,37 @@ html, body, #content {
   transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Summary Stats (Compact 5-box row in clean white) */
-.stats-summary-slim {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+/* AVG Stack Badge (Inline in header) */
+.avg-stack-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #bfdbfe;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  margin-left: 6px;
 }
 
-@media (max-width: 1024px) {
-  .stats-summary-slim {
-    grid-template-columns: repeat(3, 1fr);
-  }
+.avg-badge-label {
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
 }
 
-@media (max-width: 600px) {
-  .stats-summary-slim {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-  }
-  .stat-box-slim:first-child {
-    grid-column: span 2;
-  }
+.avg-badge-val {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.avg-badge-bb {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
 }
 
 .stat-box-slim {
@@ -786,7 +795,7 @@ html, body, #content {
 .bf-panel-compact {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0f7ff 0%, #f0f7ff 100%);
-  border: 1px solid #ffffffff;
+  border: 1px solid #bfdbfe;
   border-radius: 8px;
   padding: 10px 14px;
   position: relative;
@@ -951,6 +960,35 @@ html, body, #content {
   font-size: 0.78rem;
   color: var(--text-main);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.matchup-info-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-toggle-bf-details {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: var(--accent-blue);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-toggle-bf-details:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
 }
 
 .matchup-vs-badge {
